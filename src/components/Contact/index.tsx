@@ -1,44 +1,48 @@
 import { Close } from "@mui/icons-material";
-import { Box, IconButton, Modal, TextField, Typography, useTheme } from "@mui/material";
+import { Box, Button, IconButton, Modal, TextField, Typography, useTheme } from "@mui/material";
 import { useState, type Dispatch, type SetStateAction } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from "react-toastify";
+import { contactSchema, type ContactFormData } from "../../schemas/contact";
 
 interface IContact {
   openModal: boolean;
   closeModal: Dispatch<SetStateAction<boolean>>;
 }
 
-interface IFormData {
-  name: string;
-  emailOrPhone: string;
-  cep: string;
-  street: string;
-  number: string;
-  complement: string;
-  neighborhood: string;
-  city: string;
-  state: string;
-}
-
 export const Contact = ({ openModal, closeModal }: IContact) => {
   const theme = useTheme();
-  const [formData, setFormData] = useState<IFormData>({
-    name: '',
-    emailOrPhone: '',
-    cep: '',
-    street: '',
-    number: '',
-    complement: '',
-    neighborhood: '',
-    city: '',
-    state: ''
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    setValue,
+    trigger,
+    watch
+  } = useForm<ContactFormData>({
+    resolver: zodResolver(contactSchema)
   });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [_, setListContacts] = useState<IContact[]>(() => {
+    const storedContacts = localStorage.getItem('contatos');
+    return storedContacts ? JSON.parse(storedContacts) : [];
+  });
+
+  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    
+    if (name === 'cep') {
+      const numericValue = value.replace(/\D/g, '').slice(0, 8);
+      setValue('cep', numericValue);
+      
+      if (numericValue.length === 8) {
+        await fetchAddressByCEP(numericValue);
+        trigger(['street', 'neighborhood', 'city', 'state']);
+      }
+    } else {
+      setValue(name as keyof ContactFormData, value);
+    }
   };
 
   const fetchAddressByCEP = async (cep: string) => {
@@ -47,28 +51,48 @@ export const Contact = ({ openModal, closeModal }: IContact) => {
       const data = await response.json();
       
       if (!data.erro) {
-        setFormData(prev => ({
-          ...prev,
-          street: data.logradouro || '',
-          neighborhood: data.bairro || '',
-          city: data.localidade || '',
-          state: data.uf || ''
-        }));
-      } else {
-        alert('CEP não encontrado!');
+        setValue('street', data.logradouro || '');
+        setValue('neighborhood', data.bairro || '');
+        setValue('city', data.localidade || '');
+        setValue('state', data.uf || '');
       }
     } catch (error) {
       console.error('Erro ao buscar CEP:', error);
-      alert('Erro ao consultar CEP. Tente novamente.');
     }
   };
 
-  const handleCepBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    const cep = e.target.value.replace(/\D/g, '');
-    if (cep.length === 8) {
-      fetchAddressByCEP(cep);
+  const handleSave = (data: any) => {
+    try {
+      const newContact = {
+        ...data,
+        id: crypto.randomUUID(),
+      };
+
+      setListContacts((prev: IContact[]) => {
+        console.log('prev:', prev)
+        console.log('newContract:', newContact)
+        let updatedContacts = []
+
+        if (!prev) {
+          updatedContacts = [newContact]
+        } else {
+          updatedContacts = [...prev, newContact];
+        }
+
+        console.log('updatedContacts:', updatedContacts)
+        
+        localStorage.setItem('contatos', JSON.stringify(updatedContacts));
+        
+        return updatedContacts;
+      });
+
+      
+      closeModal(false);
+      toast.success('O contato foi cadastrado com sucesso!');
+    } catch (e: any) {
+      toast.error('Ocorreu um erro inesperado! Tente novamente mais tarde.');
     }
-  };
+  } 
 
   return (
     <Modal 
@@ -109,6 +133,7 @@ export const Contact = ({ openModal, closeModal }: IContact) => {
         </Typography>
 
         <IconButton 
+          aria-label="Fechar modal"
           sx={{
             position: 'absolute',
             top: 4,
@@ -119,102 +144,87 @@ export const Contact = ({ openModal, closeModal }: IContact) => {
           <Close />
         </IconButton>
 
-        <Box display="flex" flexDirection="column" gap={2} paddingX={4} paddingY={2}>
-          {/* Dados Pessoais */}
-          <TextField 
-            variant="outlined" 
-            label="Nome" 
-            name="name"
-            value={formData.name}
-            onChange={handleChange}
-            required 
-            fullWidth 
-          />
-          
-          <TextField 
-            variant="outlined" 
-            label="Email ou telefone" 
-            name="emailOrPhone"
-            value={formData.emailOrPhone}
-            onChange={handleChange}
-            required 
-            fullWidth 
-          />
+        <form onSubmit={handleSubmit((data) => handleSave(data))}>
+          <Box display="flex" flexDirection="column" gap={2} paddingX={4} paddingY={2}>
+            <TextField
+              label="Nome" 
+              {...register('name')}
+              error={!!errors.name}
+              helperText={errors.name?.message}
+              fullWidth 
+            />
+            
+            <TextField 
+              label="Email ou Telefone" 
+              {...register('emailOrPhone')}
+              error={!!errors.emailOrPhone}
+              helperText={errors.emailOrPhone?.message}
+              fullWidth 
+            />
 
-          {/* Consulta CEP */}
-          <TextField 
-            variant="outlined" 
-            label="CEP" 
-            name="cep"
-            value={formData.cep}
-            onChange={handleChange}
-            onBlur={handleCepBlur}
-            inputProps={{ maxLength: 9 }}
-            required 
-            fullWidth 
-          />
+            <TextField 
+              label="Cep" 
+              {...register('cep')}
+              onChange={handleChange}
+              value={watch('cep')}
+              error={!!errors.cep}
+              helperText={errors.cep?.message}
+              fullWidth 
+            />
 
-          <Box display='flex' gap={4}>
+            <Box display='flex' gap={4}>
+              <TextField
+                label="Logradouro" 
+                {...register('street')}
+                value={watch('street')}
+                error={!!errors.street}
+                helperText={errors.street?.message}
+                fullWidth 
+              />
+              <TextField 
+                label="Número" 
+                {...register('number')}
+                error={!!errors.number}
+                helperText={errors.number?.message}
+                fullWidth
+              />
+            </Box>
+            
             <TextField 
-              variant="outlined" 
-              label="Logradouro" 
-              name="street"
-              value={formData.street}
-              onChange={handleChange}
-              required 
-              fullWidth 
+              label="Complemento" 
+              {...register('complement')}
+              error={!!errors.complement}
+              helperText={errors.complement?.message}
+              fullWidth
             />
-            <TextField 
-              variant="outlined" 
-              label="Número" 
-              name="number"
-              value={formData.number}
-              onChange={handleChange}
-              required 
-              fullWidth 
-            />
+            
+            <Box display='flex' gap={4}>
+              <TextField 
+                label="Bairro" 
+                {...register('neighborhood')}
+                error={!!errors.neighborhood}
+                helperText={errors.neighborhood?.message}
+                fullWidth
+              />
+              <TextField 
+                label="Cidade" 
+                {...register('city')}
+                error={!!errors.city}
+                helperText={errors.city?.message}
+                fullWidth
+              />
+              <TextField 
+                label="Estado" 
+                {...register('state')}
+                error={!!errors.state}
+                helperText={errors.state?.message}
+                fullWidth
+              />
+            </Box>
+
+            <Button type="submit" variant="contained">Cadastrar</Button>
           </Box>
-          
-          <TextField 
-            variant="outlined" 
-            label="Complemento" 
-            name="complement"
-            value={formData.complement}
-            onChange={handleChange}
-            fullWidth 
-          />
-          
-          <Box display='flex' gap={4}>
-            <TextField 
-              variant="outlined" 
-              label="Bairro" 
-              name="neighborhood"
-              value={formData.neighborhood}
-              onChange={handleChange}
-              required 
-              fullWidth 
-            />
-            <TextField 
-              variant="outlined" 
-              label="Cidade" 
-              name="city"
-              value={formData.city}
-              onChange={handleChange}
-              required 
-              fullWidth 
-            />
-            <TextField 
-              variant="outlined" 
-              label="Estado" 
-              name="state"
-              value={formData.state}
-              onChange={handleChange}
-              required 
-              fullWidth 
-              inputProps={{ maxLength: 2 }}
-            />
-          </Box>
-        </Box>
+        </form>
       </Box>
     </Modal>
   );

@@ -11,7 +11,7 @@ export default function Home() {
       <Button startIcon={<PersonAdd />} onClick={() => setOpenModal(true)}>Cadastrar contato</Button>
       <Map />  
 
-      <Contact openModal={openModal} closeModal={() => setOpenModal(false)}/>
+      <Contact openModal={openModal} closeModal={() => setOpenModal(false)} />
     </Box>
   )
 }
